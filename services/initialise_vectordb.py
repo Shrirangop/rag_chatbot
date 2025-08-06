@@ -4,7 +4,7 @@ import time
 import logging
 from pinecone import Pinecone, ServerlessSpec
 from langchain_pinecone import PineconeVectorStore
-from config import config
+import config
 from utils.document_processor import load_and_split_pdfs
 
 def initialize_pinecone():
@@ -14,6 +14,8 @@ def initialize_pinecone():
     Returns:
         pinecone.Index: The Pinecone index object.
     """
+
+    # logging.info(f'api_key={config.PINECONE_API_KEY}')
     pc = Pinecone(api_key=config.PINECONE_API_KEY)
     index_name = config.PINECONE_INDEX_NAME
 

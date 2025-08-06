@@ -5,7 +5,7 @@ import logging
 from glob import glob
 from langchain.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from config import config
+import config
 
 def load_and_split_pdfs():
     """

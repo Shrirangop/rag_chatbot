@@ -1,12 +1,15 @@
-# /services/llm_service.py
+# services/initialise_llm.py
 
 import logging
 import google.generativeai as genai
+from typing import AsyncGenerator
+
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnableParallel, RunnablePassthrough
 from langchain_core.output_parsers import StrOutputParser
-from config import config
+from operator import itemgetter
+import config
 
 def initialize_llm_and_embeddings():
     """
@@ -18,8 +21,8 @@ def initialize_llm_and_embeddings():
     try:
         genai.configure(api_key=config.GOOGLE_API_KEY)
         
-        # Note: The model 'gemini-2.0-flash-lite' was replaced with the standard 'gemini-1.5-flash'.
-        llm = ChatGoogleGenerativeAI(model=config.LLM_MODEL, temperature=0.2, convert_system_message_to_human=True)
+        # Using the model from config, which should be 'gemini-1.5-flash' for speed.
+        llm = ChatGoogleGenerativeAI(model=config.LLM_MODEL, temperature=0)
         embeddings_model = GoogleGenerativeAIEmbeddings(model=config.EMBEDDING_MODEL)
         
         logging.info("LLM and Embedding models initialized successfully.")
@@ -28,51 +31,64 @@ def initialize_llm_and_embeddings():
         logging.error(f"Failed to initialize Google AI models: {e}")
         raise
 
+# Add this import at the top of your file
+
 def create_rag_chain(llm, vector_store):
     """
-    Creates the complete RAG chain with a retriever.
+    Creates the complete RAG chain. The same chain can be used for invoke() and stream().
+    
+    Args:
+        llm: The initialized language model.
+        vector_store: The primary vector store (e.g., Pinecone).
+    
+    Returns:
+        A runnable LangChain object.
     """
     logging.info("Creating RAG chain...")
 
-    pinecone_retriever = vector_store.as_retriever(
+    general_retriever = vector_store.as_retriever(
         search_type=config.RETRIEVER_SEARCH_TYPE,
         search_kwargs=config.RETRIEVER_SEARCH_KWARGS
     )
 
-    template = """You are an expert insurance policy assistant. Answer each question based ONLY on the context below.
+    template = """You are a specialized insurance policy assistant with expertise in policy interpretation and claims processing.
 
-Give Answer in sentences with proper grammar and Human.
+INSTRUCTIONS:
+1. Answer ONLY using information from the provided contexts below
+2. If no relevant information exists in either context, respond: "Information not available in provided documents"
+3. Prioritize PRIORITY CONTEXT over General Context when both contain relevant information
+4. Include specific numbers, percentages, dollar amounts, and dates when available
+5. Provide clear, grammatically correct responses in 2-3 concise sentences
 
-Try to include numbers and stats whereever possible.
-
-Use PRIORITIZED CONTEXT if it contains the answer.
-
-If not, refer to GENERAL KNOWLEDGE BASE CONTEXT.
-
-If the sources conflict, PRIORITIZED CONTEXT prevails.
-
-If the answer is not found, respond: "The answer could not be found in the provided documents."
-
-Also given output should be concise and precise and should not exceed 30 words.
-
-PRIORITIZED CONTEXT:
+PRIORITY CONTEXT (Most Recent/Specific):
 {prioritized_context}
 
-GENERAL KNOWLEDGE BASE CONTEXT:
+GENERAL CONTEXT (Background Knowledge Base):
 {general_context}
 
-QUESTIONS:
-{questions}"""
+QUESTION: {question}
+
+RESPONSE REQUIREMENTS:
+- Reduce the words by rewriting the response that conveys the same information using fewer words without losing meaning
+- Maximum 40 words for comprehensive coverage
+- Include quantitative data when present
+- Use professional insurance terminology
+- Maintain factual accuracy over brevity
+
+ANSWER:"""
+    
     prompt = PromptTemplate.from_template(template)
 
     def format_docs(docs):
         return "\n\n".join(doc.page_content for doc in docs)
 
+    # This setup explicitly defines how each piece of context is fetched and formatted.
+    # The input to this chain will be a dictionary containing 'question' and 'query_doc_retriever'.
     rag_chain = (
         {
             "prioritized_context": lambda x: format_docs(x['query_doc_retriever'].get_relevant_documents(x['question'])),
-            "general_context": lambda x: format_docs(pinecone_retriever.get_relevant_documents(x['question'])),
-            "questions": lambda x: x['question']
+            "general_context": itemgetter("question") | general_retriever | format_docs,
+            "question": itemgetter("question")
         }
         | prompt
         | llm
@@ -80,4 +96,25 @@ QUESTIONS:
     )
 
     logging.info("Hybrid Q&A chain is ready.")
-    return rag_chain
+    return rag_chain 
+
+async def astream_rag_response(rag_chain, question: str, query_doc_retriever) -> AsyncGenerator[str, None]:
+    """
+    Invokes the RAG chain using the .astream() method for asynchronous streaming.
+
+    Args:
+        rag_chain: The runnable RAG chain object.
+        question: The user's question.
+        query_doc_retriever: The dynamically created retriever for the uploaded document.
+
+    Yields:
+        str: Chunks of the response as they are generated by the LLM.
+    """
+    # The input to the chain needs to match what it expects.
+    chain_input = {
+        "question": question,
+        "query_doc_retriever": query_doc_retriever
+    }
+    
+    async for chunk in rag_chain.astream(chain_input):
+        yield chunk
