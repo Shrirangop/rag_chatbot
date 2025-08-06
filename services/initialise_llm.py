@@ -55,7 +55,7 @@ def create_rag_chain(llm, vector_store):
 
 INSTRUCTIONS:
 1. Answer ONLY using information from the provided contexts below
-2. If no relevant information exists in either context, respond: "Information not available in provided documents"
+2. If no relevant information exists in either context, respond with general knowledge about insurance policies that are suitable here
 3. Prioritize PRIORITY CONTEXT over General Context when both contain relevant information
 4. Include specific numbers, percentages, dollar amounts, and dates when available
 5. Provide clear, grammatically correct responses in 2-3 concise sentences
