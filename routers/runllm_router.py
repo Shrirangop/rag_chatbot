@@ -145,7 +145,7 @@ async def process_document_and_get_answers(request: DocumentRequest) -> dict:
 
 router = APIRouter()
 
-@router.post("/hackrx/run-sync")
+@router.post("/hackrx/run")
 async def process_document_sync(request: DocumentRequest, api_key: str = Depends(get_api_key)):
     """
     Processes a PDF and returns a single JSON object with all answers.
@@ -163,7 +163,7 @@ async def process_document_sync(request: DocumentRequest, api_key: str = Depends
     # FastAPI will automatically convert the dictionary to a JSON response
     return result_dict
 
-@router.post("/hackrx/run", response_model=DocumentResponse)
+@router.post("/hackrx/run-old", response_model=DocumentResponse)
 async def process_document(request: DocumentRequest, api_key: str = Depends(get_api_key)):
     """Processes a PDF document and answers questions using RAG (Blocking)."""
     if rag_chain is None:
