@@ -78,7 +78,7 @@ def initialize_services_sync():
 # --- NON-STREAMING LOGIC (OPTIMIZED) ---
 async def process_document_and_get_answers(request: DocumentRequest) -> dict:
     """
-    Processes the document asynchronously to reduce latency, collects all answers, 
+    Processes the document asynchronously, collects all answers in a single batch,
     and returns a single dictionary.
     """
     pdf_filename = None
@@ -89,8 +89,6 @@ async def process_document_and_get_answers(request: DocumentRequest) -> dict:
     try:
         # --- 1. Document Setup and Processing ---
         logging.info("Downloading document...")
-        # NOTE: Using an async HTTP client like `httpx` would make this step non-blocking as well.
-        # For simplicity, we'll keep `requests` here as the main bottleneck is embedding.
         pdf_response = requests.get(str(request.documents), timeout=30)
         pdf_response.raise_for_status()
 
@@ -101,34 +99,37 @@ async def process_document_and_get_answers(request: DocumentRequest) -> dict:
         logging.info("Processing document...")
         loader = PyPDFLoader(pdf_filename)
         docs = loader.load()
-        if not docs: raise ValueError("Could not extract any content from the provided PDF.")
+        if not docs:
+            raise ValueError("Could not extract any content from the provided PDF.")
 
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
         chunks = splitter.split_documents(docs)
-        if not chunks: raise ValueError("Document content was empty or could not be split into chunks.")
-        
-        # --- OPTIMIZATION: Use the async method for vector store creation ---
-        # This performs batch embedding asynchronously, which is the main performance gain.
+        if not chunks:
+            raise ValueError("Document content was empty or could not be split into chunks.")
+
         logging.info(f"Creating vector store for {len(chunks)} chunks...")
         vector_store = await FAISS.afrom_documents(chunks, embeddings_model)
         doc_retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 4})
 
-        # --- 2. Question Answering ---
-        for question in request.questions:
-            try:
-                full_answer = ""
-                async for chunk in astream_rag_response(rag_chain, question, doc_retriever):
-                    full_answer += chunk
-                
-                final_result["answers"].append(full_answer)
+        # --- 2. Batch Question Answering ---
+        logging.info(f"Preparing to answer {len(request.questions)} questions in a batch...")
 
-            except Exception as e:
-                logging.error(f"Error getting answer for question '{question}': {e}")
-                final_result["answers"].append({
-                    "question": question,
-                    "status": "error",
-                    "error": str(e)
-                })
+        # Prepare a list of inputs for the batch call
+        batch_inputs = [
+            {"question": q, "query_doc_retriever": doc_retriever}
+            for q in request.questions
+        ]
+
+        # Invoke the chain with .batch() for parallel processing
+        batch_results = rag_chain.batch(batch_inputs)
+
+        # Structure the final result
+        final_result["answers"] = [
+             batch_results[i]
+            for i in range(len(batch_results))
+        ]
+        logging.info("✅ All questions answered successfully.")
+
 
     except Exception as e:
         logging.error(f"A critical error occurred during document processing: {e}")
