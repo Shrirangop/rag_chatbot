@@ -109,7 +109,7 @@ async def process_document_and_get_answers(request: DocumentRequest) -> dict:
 
         logging.info(f"Creating vector store for {len(chunks)} chunks...")
         vector_store = await FAISS.afrom_documents(chunks, embeddings_model)
-        doc_retriever = vector_store.as_retriever(search_type="similarity", search_kwargs={"k": 4})
+        doc_retriever = vector_store.as_retriever(search_type="mmr", search_kwargs={"k": 4,"fetch_k": 6, "lambda_mult": 0.8  })
 
         # --- 2. Batch Question Answering ---
         logging.info(f"Preparing to answer {len(request.questions)} questions in a batch...")

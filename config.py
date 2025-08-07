@@ -34,7 +34,7 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 100
 
 # --- Retriever Configuration ---
-RETRIEVER_SEARCH_TYPE = "similarity" 
-RETRIEVER_SEARCH_KWARGS = {"k": 2}
+RETRIEVER_SEARCH_TYPE = "mmr" 
+RETRIEVER_SEARCH_KWARGS = {"k": 4,"fetch_k": 6, "lambda_mult": 0.8 }
 
 logging.info("Configuration loaded successfully.")
