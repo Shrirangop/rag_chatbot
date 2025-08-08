@@ -26,7 +26,7 @@ os.environ['GOOGLE_API_KEY'] = GOOGLE_API_KEY
 # --- Model and VectorDB Configuration ---
 PINECONE_INDEX_NAME = os.getenv("PINECONE_INDEX_NAME")
 EMBEDDING_MODEL = "models/text-embedding-004"
-LLM_MODEL = "gemini-2.0-flash" # More standard model name
+LLM_MODEL = "gemini-2.0-flash-lite" # More standard model name
 EMBEDDING_DIMENSION = 768      # For 'text-embedding-004'
 
 # --- Text Splitter Configuration ---
